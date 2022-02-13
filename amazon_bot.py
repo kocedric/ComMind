@@ -1,13 +1,12 @@
 import time
 import datetime
-import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
 
 
 class AmazonBot:
 
-    def __init__(self, mongodb_client, server_smtp):
+    def __init__(self):
         self.amazon_header = {
             'authority': 'www.amazon.fr',
             'cache-control': 'max-age=0',
@@ -21,8 +20,6 @@ class AmazonBot:
             'sec-fetch-dest': 'document',
             'accept-language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
         }
-        self.mongodb_client = mongodb_client
-        self.server_smtp = server_smtp
         # Ajouter ici le chemin vers chromedriver
         # self.driver = webdriver.Chrome(executable_path=r"C:\Users\cedri\Documents\chromedriver_win32\chromedriver.exe")
         # ou bien autre astuce faites un pip install webdriver-manager
@@ -149,24 +146,45 @@ class AmazonBot:
 
         return data, product_reviews
 
-    def scrap_urls(self):
+
+class Scraper:
+    """
+    Permet de scraper les informations présents sur le site indiqué
+    """
+
+    def __init__(self, mongodb_client, bot_scraper):
+        self.mongodb_client = mongodb_client
+        self.bot_scraper = bot_scraper
+
+    def scrape_category_urls(self):
+        """
+        Nous permet de scraper les urls des produits present dans la catégorie et de les sauvegardés dans MongoDB
+        """
+
         category_urls = self.mongodb_client["amazon"]["category_urls"].find({})
         for category_url in category_urls:
             if category_url["scrape"] is True:
                 print("Url à scraper (cat):", category_url["url"], "\n")
 
-                products = self.get_product_urls(category_url["url"])
+                product_urls = self.bot_scraper.get_product_urls(category_url["url"])
 
                 # Upsert
-                for product in products:
-                    print("product", product)
-                    self.mongodb_client["amazon"]["product_urls"].update({"url": product}, {"$set": {"url": product}},
+                for product_url in product_urls:
+                    print("product", product_url)
+                    self.mongodb_client["amazon"]["product_urls"].update({"url": product_url},
+                                                                         {"$set": {"url": product_url}},
                                                                          upsert=True)
 
                 # Update
                 self.mongodb_client["amazon"]["category_urls"].update({"url": category_url["url"]}, {"$set": {
                     'scrape': False
                 }})
+                time.sleep(2)
+
+    def scrape_product_data(self):
+        """
+        Nous permet de recupérer les informations liés au produit et les stoke dans une base de donnée MongoDB
+        """
 
         # Query MongoDB pour récupérer les liens à scraper
         product_urls = self.mongodb_client["amazon"]["product_urls"].find({
@@ -181,7 +199,7 @@ class AmazonBot:
 
         for product_url in product_urls:
             print("Url à scraper:", product_url["url"], "\n")
-            data, reviews = self.get_product_data(product_url["url"])
+            data, reviews = self.bot_scraper.get_product_data(product_url["url"])
 
             # Upsert
             self.mongodb_client["amazon"]["product_data"].update({"url": product_url['url']}, {"$set": data},
@@ -198,53 +216,5 @@ class AmazonBot:
                 'updated_at': datetime.datetime.now()
             }})
 
-            ## Dernier prix enregistrer pour un produit
-            # try:
-            #    last_product_price = self.mongodb_client["amazon"]["product_prices"].find(
-            #        {"url": data['url']}).sort([('created_at', -1)]).next()
-            # except:
-            #    last_product_price = None
-
-            ## On insert directement si aucun prix n'existe pour le produit en question
-            # if last_product_price is None:
-            #    # Insert
-            #    self.mongodb_client["amazon"]["product_prices"].insert({
-            #        "url": product_url["url"],
-            #        "price": data["price"],
-            #        "created_at": datetime.datetime.now()
-            #    })
-            ## S'il existe un précédent prix au produit et que celui-ci est différent
-            ## du prix que l'on vient de récupérer
-            # elif last_product_price is not None and last_product_price['price'] != data['price']:
-            #    # Insert
-            #    self.mongodb_client["amazon"]["product_prices"].insert({
-            #        "url": product_url["url"],
-            #        "price": data["price"],
-            #        "created_at": datetime.datetime.now()
-            #    })
-
-            #    # On check le type
-            #    if (type(data["price"]) is int or type(data['price']) is float) and \
-            #            (type(last_product_price["price"]) is int or type(last_product_price["price"]) is float):
-
-            #        # On calcule la différence entre l'ancien et le nouveau prix
-            #        diff_price_percentage = (1 - data["price"] / last_product_price["price"]) * 100
-
-            #        # S'il y a une baisse du prix on envoie un email
-            #        if diff_price_percentage > 0:
-            #            message = """
-            #            Diminution du prix de %s%% pour le produit %s.
-            #            Précédent prix: %s.
-            #            Nouveau prix: %s.
-            #            """ % (
-            #                diff_price_percentage,
-            #                product_url["url"],
-            #                last_product_price["price"],
-            #                data["price"]
-            #            )
-            #            # On encode ici le message car j'y ai ajouté un caractère spécial le %
-            #            message = message.encode("utf-8")
-            #            # Ajouter l'email d'envoi et de réception du message
-            #            self.server_smtp.sendmail("specialtorrent02@gmail.com", "specialtorrent02@gmail.com", message)
         # pause de 2 secondes
         time.sleep(2)
