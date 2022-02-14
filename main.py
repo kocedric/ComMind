@@ -4,7 +4,8 @@ import os
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-from amazon_bot import AmazonBot, Scraper
+from site_bot import AmazonBot
+from scraper import Scraper
 
 # Chargement des variables d'environnement se trouvant dans le fichier .env
 load_dotenv()
